@@ -1,0 +1,7 @@
+# Listener profiles, one per age band used by PromptBuilder.registroPerEta.
+# Names are fictional.
+profiles:
+  - {id: p06, name: Sofia, sex: FEMMINA, age: 6}
+  - {id: p10, name: Luca, sex: MASCHIO, age: 10}
+  - {id: p14, name: Giulia, sex: FEMMINA, age: 14}
+  - {id: p40, name: Marco, sex: MASCHIO, age: 40}

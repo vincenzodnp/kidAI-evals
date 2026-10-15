@@ -1,0 +1,17 @@
+# Thresholds for the deterministic checks. All are assumptions to calibrate, not ground truth.
+
+length:
+  # The prompt asks for "circa un minuto e mezzo, due minuti al massimo".
+  # Assumption: Italian TTS at roughly 130-160 words per minute.
+  # TODO: calibrate by timing a few guides with the app's real TTS voice.
+  min_words: 200
+  max_words: 320
+
+# Minimum Gulpease index per age band (same bands as PromptBuilder.registroPerEta).
+# Reference scale (Lucisano & Piemontese, 1988): below 80 is hard for readers with
+# primary-school education, below 60 for lower-secondary, below 40 for upper-secondary.
+gulpease_min:
+  lt8: 80     # primary school
+  lt12: 80    # mostly primary school; the stricter threshold is deliberate
+  lt16: 60    # lower secondary
+  adult: 40

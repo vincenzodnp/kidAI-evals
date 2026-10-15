@@ -1,0 +1,83 @@
+# KidAI evals
+
+An evaluation harness for **KidAI**, an Android audio-guide app for families. You point the
+phone at a monument, the app identifies it with a multimodal model and tells its story in a
+style chosen for the listener: a fairy tale for a six-year-old, a short essay for a parent.
+
+The guide goes straight from the model to a child's ear, with no human review in between.
+These evals measure whether that is safe and good enough, and what changes when the prompt
+or the model changes.
+
+## What it measures
+
+The app already asks the model for a strict output contract and a set of rules
+(`PromptBuilder.kt`). The question is how often those rules actually hold.
+
+| Area | What | How |
+|---|---|---|
+| Output contract | First line `SOGGETTO: … \| FIDUCIA: alta/media/bassa`; nothing more unless confidence is `alta` | deterministic |
+| Identification | Correct subject, and the **confident-but-wrong rate** (high confidence on a wrong answer) | ground-truth labels with aliases |
+| Text-to-speech form | No markdown, lists, headings, asterisks or emoji | deterministic |
+| Length | About 1.5–2 minutes of listening | word count (thresholds in `config/eval.yaml`) |
+| Age register | Language suited to the listener's age band | [Gulpease index](https://it.wikipedia.org/wiki/Indice_Gulpease), a readability formula designed for Italian |
+| Truthfulness and style | Facts correct, legends labelled as legends, style followed | Claude as judge with a written rubric (`rubric/judge.md`) |
+| Hard cases | Instructions written inside the photo, ambiguous shots, places with violent histories told to young children | purpose-built adversarial cases |
+
+The confident-but-wrong rate matters most: an app that tells a child the wrong story with
+full confidence loses the family's trust in every guide that follows.
+
+## How it works
+
+```
+data/cases.yaml      photos + ground truth (subject, aliases, GPS, expected behaviour)
+data/profiles.yaml   listener profiles: ages 6, 10, 14 and an adult
+src/kidai_evals/
+  prompts.py         v1 = faithful port of the app's PromptBuilder.kt; add variants here
+  parser.py          same parsing rules as the app's StreamParser.kt
+  providers.py       Gemini (the app's current engine), Claude, and a fake provider
+  checks.py          deterministic checks
+  judge.py           LLM-as-judge
+  cli.py             `kidai-evals run` and `kidai-evals report`
+```
+
+Each photo is paired with a sample of (profile, style) combinations, so a run stays cheap.
+Results are written as JSONL, one line per response, with the raw output kept for review.
+
+## Quick start
+
+```sh
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+pytest -q
+
+# Offline dry run, no API keys needed
+kidai-evals run --provider fake --model fake-1
+kidai-evals report
+```
+
+With real models (keys in `.env`, see `.env.example`):
+
+```sh
+set -a; source .env; set +a
+kidai-evals run --provider gemini --model gemini-3.6-flash
+kidai-evals run --provider claude --model claude-sonnet-5-5 --judge-model claude-opus-5-5
+kidai-evals report --output results/report.md
+```
+
+Useful options: `--variant v1`, `--combos-per-case 0` (full matrix), `--limit 5`,
+`--styles FANTASTICA STORICA`.
+
+## Photos and privacy
+
+Only photos taken by the author are used, and none show identifiable people. Add a JPEG to
+`data/images/` and an entry to `data/cases.yaml`. The example entries in `cases.yaml` still need
+their photos.
+
+## Next steps
+
+1. Baseline: run the app's current prompt (`v1`) on Gemini, its default engine.
+2. Calibrate the judge: score a sample of guides by hand with the same rubric and measure agreement.
+3. Add guardrails as a `v2` prompt and measure the difference.
+4. Compare Gemini and Claude on cost, latency and quality, and publish the results whatever they show.
+
+Developed by Vincenzo De Naro Papa with the help of Claude Code.
