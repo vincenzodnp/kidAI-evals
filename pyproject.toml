@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Evaluation harness for KidAI, a family audio-guide app"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
 dependencies = ["pyyaml>=6", "anthropic>=0.40", "google-genai>=1.0"]
 
 [project.optional-dependencies]

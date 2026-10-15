@@ -81,3 +81,8 @@ their photos.
 4. Compare Gemini and Claude on cost, latency and quality, and publish the results whatever they show.
 
 Developed by Vincenzo De Naro Papa with the help of Claude Code.
+
+## Licence
+
+Code released under the [MIT Licence](LICENSE). Photos in `data/images/` remain the author's and are
+not covered by it unless stated otherwise.
