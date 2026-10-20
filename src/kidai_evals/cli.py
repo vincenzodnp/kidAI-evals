@@ -7,6 +7,7 @@ import datetime as dt
 import json
 import random
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 from statistics import mean
@@ -31,6 +32,22 @@ def _combos(cases, profiles, styles, per_case: int, seed: int):
             yield case, profile, style
 
 
+def _complete_with_retry(provider, prompt, image_path, case, retries: int, base_delay: float):
+    """Call the provider, retrying transient failures (rate limits, timeouts) with exponential backoff.
+
+    Waits base_delay, then 2x, 4x... seconds between attempts. Raises the last error if every attempt fails.
+    """
+    for attempt in range(retries + 1):
+        try:
+            return provider.complete(prompt, image_path, case)
+        except Exception as exc:  # SDK errors differ per provider; treat them all as retryable
+            if attempt == retries:
+                raise
+            delay = base_delay * (2 ** attempt)
+            print(f"  {case.id}: {type(exc).__name__} ({exc}); retrying in {delay:.0f}s", file=sys.stderr)
+            time.sleep(delay)
+
+
 def cmd_run(args) -> int:
     cfg = load_yaml(args.config)
     cases = load_cases(args.cases)
@@ -51,7 +68,7 @@ def cmd_run(args) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     images_dir = Path(args.images)
 
-    done = skipped = 0
+    done = skipped = errors = 0
     with out_path.open("w", encoding="utf-8") as out:
         for case, profile, style in _combos(cases, profiles, styles, args.combos_per_case, args.seed):
             image_path = images_dir / case.image
@@ -62,13 +79,25 @@ def cmd_run(args) -> int:
                     continue
                 image_path = None
             prompt = build(case, profile, style)
-            completion = provider.complete(prompt, image_path, case)
-            parsed = parse(completion.text)
-            checks = run_checks(parsed, case, profile, cfg)
-            row = {
+            base = {
                 "run_id": run_id, "provider": args.provider, "model": args.model, "variant": args.variant,
                 "case_id": case.id, "case_kind": case.kind, "expect": case.expect,
                 "profile_id": profile.id, "age": profile.age, "style": style.name,
+            }
+            if args.pause:
+                time.sleep(args.pause)  # spread calls out to stay under per-minute rate limits
+            try:
+                completion = _complete_with_retry(provider, prompt, image_path, case,
+                                                  args.retries, args.retry_delay)
+            except Exception as exc:
+                # Record the failure and move on: one bad call must not lose the whole run.
+                out.write(json.dumps({**base, "error": f"{type(exc).__name__}: {exc}"}, ensure_ascii=False) + "\n")
+                errors += 1
+                continue
+            parsed = parse(completion.text)
+            checks = run_checks(parsed, case, profile, cfg)
+            row = {
+                **base,
                 "latency_s": round(completion.latency_s, 3),
                 "input_tokens": completion.input_tokens, "output_tokens": completion.output_tokens,
                 "checks": checks.to_dict(), "output": completion.text, "judge": None,
@@ -80,7 +109,7 @@ def cmd_run(args) -> int:
                     row["judge"] = {"error": str(exc)}
             out.write(json.dumps(row, ensure_ascii=False) + "\n")
             done += 1
-    print(f"{done} responses written to {out_path} ({skipped} skipped)")
+    print(f"{done} responses written to {out_path} ({skipped} skipped, {errors} API errors)")
     return 0
 
 
@@ -102,20 +131,26 @@ def cmd_report(args) -> int:
         return 1
 
     groups = defaultdict(list)
+    failed = defaultdict(int)
     for r in rows:
-        groups[(r["provider"], r["model"], r["variant"])].append(r)
+        key = (r["provider"], r["model"], r["variant"])
+        if "error" in r:
+            failed[key] += 1  # API call failed after all retries: counted, not scored
+        else:
+            groups[key].append(r)
 
-    headers = ["Provider", "Model", "Prompt", "N", "Format ok", "Correct ID", "Confident but wrong",
+    headers = ["Provider", "Model", "Prompt", "N", "API errors", "Format ok", "Correct ID", "Confident but wrong",
                "Stops when unsure", "No TTS violations", "Length ok", "Readable for age",
                "Gulpease", "Latency s", "Out tokens", "Judge accuracy", "Judge safety"]
     lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
-    for (prov, model, variant), rs in sorted(groups.items()):
+    for prov, model, variant in sorted(set(groups) | set(failed)):
+        rs = groups.get((prov, model, variant), [])
         c = [r["checks"] for r in rs]
         identify = [r["checks"] for r in rs if r["expect"] == "identify"]
         guides = [x for x in c if x["guide_words"]]
         judged = [r["judge"] for r in rs if r["judge"] and "error" not in r["judge"]]
         lines.append("| " + " | ".join([
-            prov, model, variant, str(len(rs)),
+            prov, model, variant, str(len(rs)), str(failed[(prov, model, variant)]),
             _pct(x["header_ok"] for x in c),
             _pct(x["subject_correct"] for x in identify),
             _pct(x["confident_wrong"] for x in c),
@@ -153,6 +188,9 @@ def main(argv=None) -> int:
                      help="(profile, style) pairs sampled per photo; 0 = full matrix")
     run.add_argument("--seed", type=int, default=42)
     run.add_argument("--limit", type=int, help="only the first N cases")
+    run.add_argument("--retries", type=int, default=4, help="extra attempts after a failed API call")
+    run.add_argument("--retry-delay", type=float, default=5.0, help="first wait in seconds; doubles each retry")
+    run.add_argument("--pause", type=float, default=0.0, help="seconds to wait before every call")
     run.add_argument("--judge-model", help="Claude model id for LLM-as-judge (omit to skip judging)")
     run.add_argument("--out", default=str(ROOT / "results"))
     run.set_defaults(func=cmd_run)

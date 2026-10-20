@@ -65,7 +65,9 @@ kidai-evals report --output results/report.md
 ```
 
 Useful options: `--variant v1`, `--combos-per-case 0` (full matrix), `--limit 5`,
-`--styles FANTASTICA STORICA`.
+`--styles FANTASTICA STORICA`. Failed API calls are retried with exponential backoff
+(`--retries`, `--retry-delay`); a call that still fails is recorded as an error and counted in the
+report instead of stopping the run. On a rate-limited free tier, `--pause 5` spreads the calls out.
 
 ## Photos and privacy
 
