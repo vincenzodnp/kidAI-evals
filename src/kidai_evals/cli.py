@@ -10,7 +10,7 @@ import sys
 import time
 from collections import defaultdict
 from pathlib import Path
-from statistics import mean
+from statistics import mean, median
 
 from .checks import run_checks
 from .data import load_cases, load_profiles, load_yaml
@@ -70,7 +70,9 @@ def cmd_run(args) -> int:
 
     done = skipped = errors = 0
     with out_path.open("w", encoding="utf-8") as out:
-        for case, profile, style in _combos(cases, profiles, styles, args.combos_per_case, args.seed):
+        combos = list(_combos(cases, profiles, styles, args.combos_per_case, args.seed))
+        # --repeats N asks the same question N times, to separate randomness from the effect of profile/style.
+        for (case, profile, style), repeat in ((c, r) for c in combos for r in range(args.repeats)):
             image_path = images_dir / case.image
             if not image_path.exists():
                 if args.provider != "fake":
@@ -82,7 +84,7 @@ def cmd_run(args) -> int:
             base = {
                 "run_id": run_id, "provider": args.provider, "model": args.model, "variant": args.variant,
                 "case_id": case.id, "case_kind": case.kind, "expect": case.expect,
-                "profile_id": profile.id, "age": profile.age, "style": style.name,
+                "profile_id": profile.id, "age": profile.age, "style": style.name, "repeat": repeat,
             }
             if args.pause:
                 time.sleep(args.pause)  # spread calls out to stay under per-minute rate limits
@@ -99,6 +101,8 @@ def cmd_run(args) -> int:
             row = {
                 **base,
                 "latency_s": round(completion.latency_s, 3),
+                "ttft_s": _round(completion.ttft_s), "header_s": _round(completion.header_s),
+                "first_sentence_s": _round(completion.first_sentence_s),
                 "input_tokens": completion.input_tokens, "output_tokens": completion.output_tokens,
                 "checks": checks.to_dict(), "output": completion.text, "judge": None,
             }
@@ -111,6 +115,32 @@ def cmd_run(args) -> int:
             done += 1
     print(f"{done} responses written to {out_path} ({skipped} skipped, {errors} API errors)")
     return 0
+
+
+def _round(x):
+    return round(x, 3) if x is not None else None
+
+
+def consistency(rows: list[dict]) -> tuple[int, int]:
+    """How many photos got the same outcome every time they were asked.
+
+    Outcome = (identified correctly?, answered with high confidence?). Comparing outcomes rather
+    than raw names avoids false alarms from wording ("Thin House" vs "Casa Sottile").
+    Returns (consistent photos, photos asked at least twice).
+    """
+    by_case = defaultdict(set)
+    counts = defaultdict(int)
+    for r in rows:
+        c = r["checks"]
+        by_case[r["case_id"]].add((c["subject_correct"], c["confidence"] == "alta"))
+        counts[r["case_id"]] += 1
+    asked_twice = [k for k, n in counts.items() if n >= 2]
+    return sum(1 for k in asked_twice if len(by_case[k]) == 1), len(asked_twice)
+
+
+def _med(values, digits=1) -> str:
+    values = [v for v in values if v is not None]
+    return f"{median(values):.{digits}f}" if values else "–"
 
 
 def _pct(values) -> str:
@@ -141,7 +171,8 @@ def cmd_report(args) -> int:
 
     headers = ["Provider", "Model", "Prompt", "N", "API errors", "Format ok", "Correct ID", "Confident but wrong",
                "Stops when unsure", "No TTS violations", "Length ok", "Readable for age",
-               "Gulpease", "Latency s", "Out tokens", "Judge accuracy", "Judge safety"]
+               "Same outcome per photo", "Gulpease", "First sentence s (median)", "Total s (median)",
+               "Out tokens", "Judge accuracy", "Judge safety"]
     lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
     for prov, model, variant in sorted(set(groups) | set(failed)):
         rs = groups.get((prov, model, variant), [])
@@ -158,8 +189,10 @@ def cmd_report(args) -> int:
             _pct(not x["tts_violations"] for x in guides),
             _pct(x["length_ok"] for x in guides),
             _pct(x["readability_ok"] for x in guides),
+            (lambda ok, n: f"{ok}/{n}" if n else "–")(*consistency(rs)),
             _avg(x["gulpease"] for x in guides),
-            _avg((r["latency_s"] for r in rs), 2),
+            _med((r.get("first_sentence_s") for r in rs), 2),
+            _med((r["latency_s"] for r in rs), 2),
             _avg((r["output_tokens"] for r in rs), 0),
             _avg(j["factual_accuracy"] for j in judged),
             _avg(j["safety"] for j in judged),
@@ -188,6 +221,7 @@ def main(argv=None) -> int:
                      help="(profile, style) pairs sampled per photo; 0 = full matrix")
     run.add_argument("--seed", type=int, default=42)
     run.add_argument("--limit", type=int, help="only the first N cases")
+    run.add_argument("--repeats", type=int, default=1, help="ask each question N times (measures consistency)")
     run.add_argument("--retries", type=int, default=4, help="extra attempts after a failed API call")
     run.add_argument("--retry-delay", type=float, default=5.0, help="first wait in seconds; doubles each retry")
     run.add_argument("--pause", type=float, default=0.0, help="seconds to wait before every call")

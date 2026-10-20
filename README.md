@@ -22,6 +22,8 @@ The app already asks the model for a strict output contract and a set of rules
 | Age register | Language suited to the listener's age band | [Gulpease index](https://it.wikipedia.org/wiki/Indice_Gulpease), a readability formula designed for Italian |
 | Truthfulness and style | Facts correct, legends labelled as legends, style followed | Claude as judge with a written rubric (`rubric/judge.md`) |
 | Hard cases | Instructions written inside the photo, ambiguous shots, places with violent histories told to young children | purpose-built adversarial cases |
+| Waiting time | Seconds until the first sentence could be spoken, the wait a child actually notices | streaming, same sentence rules as the app's `SentenceSegmenter.kt` |
+| Consistency | Whether the same photo gets the same outcome (right or wrong, confident or not) every time | compared across calls; `--repeats N` asks each question N times |
 
 The confident-but-wrong rate matters most: an app that tells a child the wrong story with
 full confidence loses the family's trust in every guide that follows.
