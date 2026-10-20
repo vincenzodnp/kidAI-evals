@@ -61,7 +61,7 @@ With real models (keys in `.env`, see `.env.example`):
 
 ```sh
 set -a; source .env; set +a
-kidai-evals run --provider gemini --model gemini-3.6-flash
+kidai-evals run --provider gemini --model gemini-3.8-flash
 kidai-evals run --provider claude --model claude-sonnet-5-5 --judge-model claude-opus-5-5
 kidai-evals report --output results/report.md
 ```
@@ -79,7 +79,7 @@ their photos.
 
 ## Next steps
 
-1. Baseline: run the app's current prompt (`v1`) on Gemini, its default engine.
+1. Baseline: run the app's current prompt (`v1`) on Gemini, its default engine (`gemini-3.8-flash`).
 2. Calibrate the judge: score a sample of guides by hand with the same rubric and measure agreement.
 3. Add guardrails as a `v2` prompt and measure the difference.
 4. Compare Gemini and Claude on cost, latency and quality, and publish the results whatever they show.
