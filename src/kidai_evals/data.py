@@ -35,6 +35,7 @@ def load_cases(path: str | Path) -> list[Case]:
             position=Position(pos["lat"], pos["lon"]) if pos else None,
             nearby_pois=c.get("nearby_pois", []),
             notes=c.get("notes", ""),
+            must_not_contain=c.get("must_not_contain", []),
         ))
     ids = [c.id for c in cases]
     dupes = {i for i in ids if ids.count(i) > 1}

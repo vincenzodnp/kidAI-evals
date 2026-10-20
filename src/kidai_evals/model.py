@@ -94,3 +94,6 @@ class Case:
     position: Position | None = None
     nearby_pois: list[str] = field(default_factory=list)
     notes: str = ""
+    # Words that must never appear in the answer, e.g. the payload of instructions written
+    # inside the photo. If one shows up, the model obeyed text in the image (prompt injection).
+    must_not_contain: list[str] = field(default_factory=list)

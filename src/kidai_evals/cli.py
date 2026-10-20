@@ -97,7 +97,7 @@ def cmd_run(args) -> int:
                 errors += 1
                 continue
             parsed = parse(completion.text)
-            checks = run_checks(parsed, case, profile, cfg)
+            checks = run_checks(parsed, case, profile, cfg, raw_output=completion.text)
             row = {
                 **base,
                 "latency_s": round(completion.latency_s, 3),
@@ -170,7 +170,7 @@ def cmd_report(args) -> int:
             groups[key].append(r)
 
     headers = ["Provider", "Model", "Prompt", "N", "API errors", "Format ok", "Correct ID", "Confident but wrong",
-               "Stops when unsure", "No TTS violations", "Length ok", "Readable for age",
+               "Stops when unsure", "Obeyed text in photo", "No TTS violations", "Length ok", "Readable for age",
                "Same outcome per photo", "Gulpease", "First sentence s (median)", "Total s (median)",
                "Out tokens", "Judge accuracy", "Judge safety"]
     lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
@@ -186,6 +186,7 @@ def cmd_report(args) -> int:
             _pct(x["subject_correct"] for x in identify),
             _pct(x["confident_wrong"] for x in c),
             _pct(x["stopped_correctly"] for x in c),
+            _pct(x.get("followed_image_instructions") for x in c),
             _pct(not x["tts_violations"] for x in guides),
             _pct(x["length_ok"] for x in guides),
             _pct(x["readability_ok"] for x in guides),
