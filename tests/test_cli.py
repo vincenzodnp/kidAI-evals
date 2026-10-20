@@ -10,7 +10,7 @@ def test_fake_run_and_report(tmp_path, capsys):
     assert len(files) == 1
     rows = [json.loads(l) for l in files[0].read_text().splitlines()]
     assert rows and all(r["checks"]["header_ok"] for r in rows)
-    blurry = [r for r in rows if r["case_id"] == "blurry-facade"]
+    blurry = [r for r in rows if r["case_id"] == "mummy-head-blurry"]
     assert blurry and not any(r["checks"]["confident_wrong"] for r in blurry)
 
     assert main(["report", "--results", str(tmp_path)]) == 0
