@@ -63,6 +63,12 @@ def cmd_run(args) -> int:
         "config_id": config_id(cfg),
         "git_commit": git_commit(ROOT),
     }
+    if args.only:
+        unknown = set(args.only) - {c.id for c in cases}
+        if unknown:
+            print(f"Unknown case ids: {sorted(unknown)}", file=sys.stderr)
+            return 2
+        cases = [c for c in cases if c.id in args.only]
     if args.limit:
         cases = cases[: args.limit]
 
@@ -287,6 +293,7 @@ def main(argv=None) -> int:
                      help="(profile, style) pairs sampled per photo; 0 = full matrix")
     run.add_argument("--seed", type=int, default=42)
     run.add_argument("--limit", type=int, help="only the first N cases")
+    run.add_argument("--only", nargs="+", metavar="CASE_ID", help="only these cases, e.g. --only nhm-dinosaur")
     run.add_argument("--repeats", type=int, default=1, help="ask each question N times (measures consistency)")
     run.add_argument("--retries", type=int, default=4, help="extra attempts after a failed API call")
     run.add_argument("--retry-delay", type=float, default=5.0, help="first wait in seconds; doubles each retry")

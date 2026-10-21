@@ -89,3 +89,13 @@ def test_rescore_applies_new_labels_and_skips_changed_inputs(tmp_path):
     assert all(r["dataset_id"] != before[0]["dataset_id"] and r["rescored_at"] for r in a)
     # b's model saw other coordinates: its rows must stay exactly as they were.
     assert [r for r in after if r["case_id"] == "b"] == [r for r in before if r["case_id"] == "b"]
+
+
+def test_only_runs_the_named_cases(tmp_path):
+    from kidai_evals.cli import main
+    assert main(["run", "--provider", "fake", "--model", "fake-1", "--only", "big-ben",
+                 "--combos-per-case", "1", "--repeats", "3", "--out", str(tmp_path)]) == 0
+    rows = [json.loads(l) for l in next(tmp_path.glob("*.jsonl")).read_text().splitlines()]
+    assert {r["case_id"] for r in rows} == {"big-ben"} and len(rows) == 3
+    assert main(["run", "--provider", "fake", "--model", "fake-1", "--only", "no-such-case",
+                 "--out", str(tmp_path)]) == 2

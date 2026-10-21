@@ -7,7 +7,7 @@ really sends. New variants (e.g. `v2` with extra guardrails) go in VARIANTS belo
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable
 
 from .model import Case, Profile, Sex, Style
@@ -102,7 +102,17 @@ def build_v1(case: Case, profile: Profile, style: Style) -> PromptPair:
     return PromptPair(system=system_v1(profile, style), user=user_photo_v1(case))
 
 
+def build_v1_nogps(case: Case, profile: Profile, style: Style) -> PromptPair:
+    """Ablation: v1 exactly, but as if the phone had no location (no GPS, no nearby places).
+
+    Comparing v1 with v1-nogps on the same photos shows how much an answer depends on the
+    location rather than on what the image shows.
+    """
+    return build_v1(replace(case, position=None, nearby_pois=[]), profile, style)
+
+
 # Register new variants here, e.g. "v2": build_v2
 VARIANTS: dict[str, Callable[[Case, Profile, Style], PromptPair]] = {
     "v1": build_v1,
+    "v1-nogps": build_v1_nogps,
 }

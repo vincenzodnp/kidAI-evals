@@ -35,3 +35,13 @@ def test_user_photo_includes_gps_and_pois():
 
 def test_user_photo_without_gps_says_so():
     assert "Non è disponibile la posizione GPS" in user_photo_v1(Case("c", "x.jpg", "x"))
+
+
+def test_nogps_variant_drops_location_only():
+    from kidai_evals.prompts import VARIANTS
+    case = Case("c", "x.jpg", "Duomo", position=Position(40.6263, 14.3757), nearby_pois=["Duomo di Amalfi"])
+    with_gps = VARIANTS["v1"](case, CHILD, Style.FANTASTICA)
+    without = VARIANTS["v1-nogps"](case, CHILD, Style.FANTASTICA)
+    assert "40.6263" in with_gps.user and "40.6263" not in without.user
+    assert "Duomo di Amalfi" not in without.user and "Non è disponibile la posizione GPS" in without.user
+    assert with_gps.system == without.system
