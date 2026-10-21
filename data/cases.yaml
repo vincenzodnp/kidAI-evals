@@ -64,7 +64,7 @@ cases:
   - id: pompidou-murals
     image: pompidou-murals.jpg
     subject: Murale "Chuuuttt!!!" di Jef Aérosol
-    aliases: [Jef Aérosol, Chuuuttt, Shepard Fairey, "Knowledge + Action = Power"]
+    aliases: [Jef Aérosol, Chuuuttt, Shepard Fairey, "Knowledge + Action = Power", Place Igor-Stravinsky]
     position: {lat: 48.8595, lon: 2.3513}
     notes: Two murals next to the Centre Pompidou; some text is legible.
 

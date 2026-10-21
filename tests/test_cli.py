@@ -52,4 +52,40 @@ def test_persistent_error_is_recorded_and_reported(tmp_path, monkeypatch, capsys
     assert rows[0]["error"].startswith("RuntimeError")
     from kidai_evals.cli import main
     assert main(["report", "--results", str(tmp_path)]) == 0
-    assert "| fake | fake-1 | v1 | 0 | 1 |" in capsys.readouterr().out
+    assert f"| fake | fake-1 | v1 | {rows[0]['dataset_id']} | 0 | 1 |" in capsys.readouterr().out
+
+
+def test_rescore_applies_new_labels_and_skips_changed_inputs(tmp_path):
+    import yaml
+    from kidai_evals.cli import main
+
+    images = tmp_path / "images"
+    images.mkdir()
+    (images / "a.jpg").write_bytes(b"photo a")  # the fake provider never opens the photos
+    (images / "b.jpg").write_bytes(b"photo b")
+    cases = tmp_path / "cases.yaml"
+
+    def write_cases(subject_a, lat_b):
+        cases.write_text(yaml.safe_dump({"cases": [
+            {"id": "a", "image": "a.jpg", "subject": subject_a},
+            {"id": "b", "image": "b.jpg", "subject": "Colosseo", "position": {"lat": lat_b, "lon": 12.0}},
+        ]}), encoding="utf-8")
+
+    data = ["--cases", str(cases), "--images", str(images)]
+    out = tmp_path / "results"
+    write_cases("Torre Eiffel", 41.0)
+    assert main(["run", "--provider", "fake", "--model", "fake-1", "--out", str(out), *data]) == 0
+    path = next(out.glob("*.jsonl"))
+    before = [json.loads(l) for l in path.read_text().splitlines()]
+    assert all(r["checks"]["subject_correct"] for r in before)
+
+    # Relabel a (the saved answer still says "Torre Eiffel") and move b's GPS (a different prompt).
+    write_cases("Pantheon", 42.0)
+    assert main(["rescore", "--results", str(out), *data]) == 0
+    after = [json.loads(l) for l in path.read_text().splitlines()]
+
+    a = [r for r in after if r["case_id"] == "a"]
+    assert a and all(r["checks"]["confident_wrong"] and not r["checks"]["subject_correct"] for r in a)
+    assert all(r["dataset_id"] != before[0]["dataset_id"] and r["rescored_at"] for r in a)
+    # b's model saw other coordinates: its rows must stay exactly as they were.
+    assert [r for r in after if r["case_id"] == "b"] == [r for r in before if r["case_id"] == "b"]

@@ -39,7 +39,8 @@ src/kidai_evals/
   providers.py       Gemini (the app's current engine), Claude, and a fake provider
   checks.py          deterministic checks
   judge.py           LLM-as-judge
-  cli.py             `kidai-evals run` and `kidai-evals report`
+  fingerprint.py     hashes that record which data, prompt and code produced each answer
+  cli.py             `kidai-evals run`, `kidai-evals rescore` and `kidai-evals report`
 ```
 
 Each photo is paired with a sample of (profile, style) combinations, so a run stays cheap.
@@ -70,6 +71,22 @@ Useful options: `--variant v1`, `--combos-per-case 0` (full matrix), `--limit 5`
 `--styles FANTASTICA STORICA`. Failed API calls are retried with exponential backoff
 (`--retries`, `--retry-delay`); a call that still fails is recorded as an error and counted in the
 report instead of stopping the run. On a rate-limited free tier, `--pause 5` spreads the calls out.
+
+### Comparing runs over time
+
+Every answer is saved with fingerprints: `dataset_id` (all cases, photos and profiles),
+`input_id` (the exact prompt and photo the model received), `config_id` (the thresholds) and
+`git_commit`. The report groups results by dataset, so runs on different data are never mixed.
+
+After fixing a label or a threshold, re-check the saved answers instead of calling the models again:
+
+```sh
+kidai-evals rescore    # updates the files in results/ in place
+kidai-evals report
+```
+
+An answer is re-scored only if the model would receive exactly the same input today. If the
+prompt changed (for example a case's GPS position), the answer is left as it was.
 
 ## Photos and privacy
 

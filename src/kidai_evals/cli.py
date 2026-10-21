@@ -1,4 +1,5 @@
-"""Command line: `kidai-evals run` generates and checks guides, `kidai-evals report` aggregates runs."""
+"""Command line: `kidai-evals run` generates and checks guides, `kidai-evals rescore` re-checks saved
+answers against the current labels, `kidai-evals report` aggregates runs."""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from statistics import mean, median
 
 from .checks import run_checks
 from .data import load_cases, load_profiles, load_yaml
+from .fingerprint import config_id, dataset_id, git_commit, input_id
 from .model import Style
 from .parser import parse
 from .prompts import VARIANTS
@@ -53,6 +55,14 @@ def cmd_run(args) -> int:
     cases = load_cases(args.cases)
     profiles = load_profiles(args.profiles)
     styles = [Style[s] for s in args.styles] if args.styles else list(Style)
+    images_dir = Path(args.images)
+    # Fingerprints saved on every row (see fingerprint.py). The dataset is fingerprinted before
+    # --limit, so a short test run and a full run on the same data share the same dataset_id.
+    fingerprints = {
+        "dataset_id": dataset_id(cases, profiles, images_dir),
+        "config_id": config_id(cfg),
+        "git_commit": git_commit(ROOT),
+    }
     if args.limit:
         cases = cases[: args.limit]
 
@@ -66,7 +76,6 @@ def cmd_run(args) -> int:
     run_id = f"{dt.datetime.now():%Y%m%d-%H%M%S}_{args.provider}_{args.model}_{args.variant}"
     out_path = Path(args.out) / f"{run_id}.jsonl"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    images_dir = Path(args.images)
 
     done = skipped = errors = 0
     with out_path.open("w", encoding="utf-8") as out:
@@ -85,6 +94,7 @@ def cmd_run(args) -> int:
                 "run_id": run_id, "provider": args.provider, "model": args.model, "variant": args.variant,
                 "case_id": case.id, "case_kind": case.kind, "expect": case.expect,
                 "profile_id": profile.id, "age": profile.age, "style": style.name, "repeat": repeat,
+                **fingerprints, "input_id": input_id(prompt, image_path),
             }
             if args.pause:
                 time.sleep(args.pause)  # spread calls out to stay under per-minute rate limits
@@ -119,6 +129,58 @@ def cmd_run(args) -> int:
 
 def _round(x):
     return round(x, 3) if x is not None else None
+
+
+def cmd_rescore(args) -> int:
+    """Re-run the deterministic checks on saved answers, with today's labels and thresholds.
+
+    No model is called: every row already holds the model's full answer in "output". A row is
+    re-scored only if the model would receive exactly the same input today (same prompt, same
+    photo); otherwise the old answer would be judged against a question it was never asked.
+    Rows saved before fingerprints existed have no input_id, so this can't be verified: they are
+    re-scored anyway and counted separately. Judge scores come from a model and are left alone.
+    """
+    cfg = load_yaml(args.config)
+    cases = {c.id: c for c in load_cases(args.cases)}
+    profiles = {p.id: p for p in load_profiles(args.profiles)}
+    images_dir = Path(args.images)
+    current = {
+        "dataset_id": dataset_id(list(cases.values()), list(profiles.values()), images_dir),
+        "config_id": config_id(cfg),
+        "rescored_at": f"{dt.datetime.now():%Y-%m-%d %H:%M:%S}",
+        "rescore_commit": git_commit(ROOT),
+    }
+
+    files = [Path(f) for f in args.files] or sorted(Path(args.results).glob("*.jsonl"))
+    for path in files:
+        rows = [json.loads(line) for line in path.open(encoding="utf-8") if line.strip()]
+        rescored = unverified = kept = 0
+        for row in rows:
+            case, profile = cases.get(row["case_id"]), profiles.get(row["profile_id"])
+            if case is None or profile is None or row["variant"] not in VARIANTS:
+                kept += 1  # the case or profile no longer exists: nothing to check against
+                continue
+            image_path = images_dir / case.image
+            if not image_path.exists():
+                image_path = None  # same rule as cmd_run (only the fake provider runs without photos)
+            prompt = VARIANTS[row["variant"]](case, profile, Style[row["style"]])
+            if "input_id" not in row:
+                unverified += 1
+            elif row["input_id"] != input_id(prompt, image_path):
+                kept += 1  # e.g. the GPS position changed: the model was asked something else
+                continue
+            row.update(current)
+            if "error" not in row:  # a failed call has no answer to check
+                parsed = parse(row["output"])
+                row["checks"] = run_checks(parsed, case, profile, cfg, raw_output=row["output"]).to_dict()
+            rescored += 1
+        # Write to a temporary file first, so a crash can't leave a half-written results file.
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+        tmp.replace(path)
+        print(f"{path.name}: {rescored} re-scored ({unverified} of them saved before input_id existed, "
+              f"so not verifiable), {kept} kept as they were (input changed or case removed)")
+    return 0
 
 
 def consistency(rows: list[dict]) -> tuple[int, int]:
@@ -163,25 +225,28 @@ def cmd_report(args) -> int:
     groups = defaultdict(list)
     failed = defaultdict(int)
     for r in rows:
-        key = (r["provider"], r["model"], r["variant"])
+        # Runs on different datasets are never mixed: their numbers aren't comparable.
+        # "?" marks rows saved before dataset_id existed (and never re-scored).
+        key = (r["provider"], r["model"], r["variant"], r.get("dataset_id", "?"))
         if "error" in r:
             failed[key] += 1  # API call failed after all retries: counted, not scored
         else:
             groups[key].append(r)
 
-    headers = ["Provider", "Model", "Prompt", "N", "API errors", "Format ok", "Correct ID", "Confident but wrong",
+    headers = ["Provider", "Model", "Prompt", "Dataset", "N", "API errors", "Format ok", "Correct ID", "Confident but wrong",
                "Stops when unsure", "Obeyed text in photo", "No TTS violations", "Length ok", "Readable for age",
                "Same outcome per photo", "Gulpease", "First sentence s (median)", "Total s (median)",
                "Out tokens", "Judge accuracy", "Judge safety"]
     lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
-    for prov, model, variant in sorted(set(groups) | set(failed)):
-        rs = groups.get((prov, model, variant), [])
+    for key in sorted(set(groups) | set(failed)):
+        prov, model, variant, dataset = key
+        rs = groups.get(key, [])
         c = [r["checks"] for r in rs]
         identify = [r["checks"] for r in rs if r["expect"] == "identify"]
         guides = [x for x in c if x["guide_words"]]
         judged = [r["judge"] for r in rs if r["judge"] and "error" not in r["judge"]]
         lines.append("| " + " | ".join([
-            prov, model, variant, str(len(rs)), str(failed[(prov, model, variant)]),
+            prov, model, variant, dataset, str(len(rs)), str(failed[key]),
             _pct(x["header_ok"] for x in c),
             _pct(x["subject_correct"] for x in identify),
             _pct(x["confident_wrong"] for x in c),
@@ -229,6 +294,15 @@ def main(argv=None) -> int:
     run.add_argument("--judge-model", help="Claude model id for LLM-as-judge (omit to skip judging)")
     run.add_argument("--out", default=str(ROOT / "results"))
     run.set_defaults(func=cmd_run)
+
+    res = sub.add_parser("rescore", help="re-check saved answers with the current labels (no model calls)")
+    res.add_argument("files", nargs="*", help="JSONL files to update in place (default: all in --results)")
+    res.add_argument("--results", default=str(ROOT / "results"))
+    res.add_argument("--cases", default=str(ROOT / "data" / "cases.yaml"))
+    res.add_argument("--profiles", default=str(ROOT / "data" / "profiles.yaml"))
+    res.add_argument("--images", default=str(ROOT / "data" / "images"))
+    res.add_argument("--config", default=str(ROOT / "config" / "eval.yaml"))
+    res.set_defaults(func=cmd_rescore)
 
     rep = sub.add_parser("report", help="aggregate results into a Markdown table")
     rep.add_argument("files", nargs="*")
