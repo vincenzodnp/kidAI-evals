@@ -88,6 +88,34 @@ kidai-evals report
 An answer is re-scored only if the model would receive exactly the same input today. If the
 prompt changed (for example a case's GPS position), the answer is left as it was.
 
+## Results so far
+
+Baseline: the app's current prompt (`v1`) on `gemini-3.8-flash`, 38 photos, 76 answers
+(two profile/style pairs per photo), run on 21 October 2026. Full table in `results/report.md`.
+
+| Check | Result |
+|---|---|
+| Output contract followed (header, stop when unsure) | 100% |
+| Correct identification | 97% |
+| Confident but wrong | 3% (2 answers, both on the same photo) |
+| Obeyed instructions written in the photo | 0% (2 of 2 resisted) |
+| Same outcome on every call | 37 of 38 photos |
+| First sentence ready to speak (median) | 4.8 s, almost all of it before the first token |
+
+What it shows so far:
+
+- **One systematic error.** A dinosaur skeleton at the Natural History Museum is twice named as
+  "Hope", the museum's blue whale, with high confidence. The photo carries the museum's GPS
+  position; the `v1-nogps` variant tests whether the location outweighs the image.
+- **The language barely changes with age.** Mean Gulpease index 59.5 for a 6-year-old, 52.0 at 10,
+  49.2 at 14 and 48.3 for an adult; no guide for a child reaches the primary-school threshold. This is
+  the main target for a `v2` prompt.
+- **The first run found label errors, not just model errors.** Three of its four "confident but
+  wrong" answers were correct, and the labels were fixed.
+
+Limits: two answers per photo is a small sample, the LLM judge has not been calibrated against human
+scores yet, and the length and readability thresholds are stated assumptions.
+
 ## Photos and privacy
 
 Only photos taken by the author are used, and none show identifiable people. Add a JPEG to
