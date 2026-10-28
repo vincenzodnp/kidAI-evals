@@ -71,6 +71,17 @@ def word_count(text: str) -> int:
     return len(re.findall(r"\S+", text))
 
 
+# --- completeness -------------------------------------------------------------
+
+def ends_with_full_stop(text: str) -> bool:
+    """True if the text ends like a finished sentence (. ! ? …), ignoring closing quotes or brackets.
+
+    A guide that stops mid-sentence ("...appartiene a un vero") is read aloud as it is,
+    so the child hears the story break off.
+    """
+    return text.rstrip().rstrip("\"'»”’)").endswith((".", "!", "?", "…"))
+
+
 # --- per-response result ---------------------------------------------------
 
 @dataclass
@@ -86,6 +97,7 @@ class CheckResult:
     gulpease: float | None
     readability_ok: bool | None
     tts_violations: list[str]
+    guide_complete: bool | None  # the guide ends with a full sentence; None when there is no guide
     followed_image_instructions: bool | None  # None when the case has no must_not_contain words
 
     def to_dict(self) -> dict:
@@ -118,6 +130,7 @@ def run_checks(parsed: Parsed, case: Case, profile: Profile, cfg: dict, raw_outp
         gulpease=round(g, 1) if g is not None else None,
         readability_ok=(g >= threshold) if g is not None else None,
         tts_violations=tts_violations(guide) if guide else [],
+        guide_complete=ends_with_full_stop(guide) if guide else None,
         # Look at what would be spoken (the guide). If the header is malformed, the model ignored the
         # app's format altogether, so check everything it wrote. Quoting the sign inside the
         # SOGGETTO line is describing it, not obeying it, so it doesn't count.

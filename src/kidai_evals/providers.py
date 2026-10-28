@@ -30,6 +30,13 @@ class Completion:
     ttft_s: float | None = None          # time to the first streamed text
     header_s: float | None = None        # time until the SOGGETTO/FIDUCIA line is complete
     first_sentence_s: float | None = None  # time until the app's TTS could start speaking
+    # Why the model stopped, in the provider's own words: Gemini "STOP", "MAX_TOKENS", "SAFETY", ...;
+    # Claude "end_turn", "max_tokens", "refusal". Anything but the normal stop explains a cut-off guide.
+    stop_reason: str | None = None
+    stop_detail: str | None = None       # e.g. the safety categories that blocked the answer
+    # Gemini only: tokens spent "thinking" before answering. They count towards max_output_tokens
+    # but are not in output_tokens, so a long think can leave too little room for the guide.
+    thinking_tokens: int | None = None
 
 
 def first_sentence(text: str) -> str | None:
@@ -90,6 +97,28 @@ class StreamTimer:
                           self.ttft_s, self.header_s, self.first_sentence_s)
 
 
+def _name(value) -> str:
+    """Enum member to its name (FinishReason.SAFETY -> "SAFETY"); plain strings pass through."""
+    return getattr(value, "name", None) or str(value)
+
+
+def gemini_stop(chunk) -> tuple[str | None, str | None]:
+    """(stop_reason, stop_detail) from one streamed Gemini chunk, or (None, None) if it has none.
+
+    Only the last chunk carries a finish reason. If the request itself was blocked there is no
+    candidate at all, just a prompt_feedback with a block reason.
+    """
+    feedback = getattr(chunk, "prompt_feedback", None)
+    if feedback is not None and feedback.block_reason:
+        return f"PROMPT_BLOCKED_{_name(feedback.block_reason)}", feedback.block_reason_message
+    for candidate in chunk.candidates or []:
+        if candidate.finish_reason:
+            blocked = [_name(r.category) for r in candidate.safety_ratings or [] if r.blocked]
+            detail = ", ".join(blocked) or candidate.finish_message or None
+            return _name(candidate.finish_reason), detail
+    return None, None
+
+
 class Provider(Protocol):
     name: str
     model: str
@@ -119,6 +148,7 @@ class GeminiProvider:
         parts.append(prompt.user)
         timer = StreamTimer()
         usage = None
+        stop_reason = stop_detail = None
         # Streaming, like the app, so we can time the first sentence the child would hear.
         for chunk in self._client.models.generate_content_stream(
             model=self.model,
@@ -129,10 +159,16 @@ class GeminiProvider:
         ):
             timer.feed(chunk.text or "")
             usage = getattr(chunk, "usage_metadata", None) or usage  # the last chunk carries the totals
-        return timer.finish(
+            reason, detail = gemini_stop(chunk)
+            if reason:
+                stop_reason, stop_detail = reason, detail
+        completion = timer.finish(
             input_tokens=getattr(usage, "prompt_token_count", None),
             output_tokens=getattr(usage, "candidates_token_count", None),
         )
+        completion.stop_reason, completion.stop_detail = stop_reason, stop_detail
+        completion.thinking_tokens = getattr(usage, "thoughts_token_count", None)
+        return completion
 
 
 class ClaudeProvider:
@@ -170,7 +206,9 @@ class ClaudeProvider:
             for text in stream.text_stream:
                 timer.feed(text)
             final = stream.get_final_message()
-        return timer.finish(final.usage.input_tokens, final.usage.output_tokens)
+        completion = timer.finish(final.usage.input_tokens, final.usage.output_tokens)
+        completion.stop_reason = final.stop_reason
+        return completion
 
 
 class FakeProvider:
@@ -196,6 +234,7 @@ class FakeProvider:
             timer.feed(word + " ")
         completion = timer.finish(input_tokens=0, output_tokens=0)
         completion.text = text  # keep the exact text (the loop adds a trailing space)
+        completion.stop_reason = "STOP"
         return completion
 
 

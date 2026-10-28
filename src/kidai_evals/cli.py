@@ -120,6 +120,8 @@ def cmd_run(args) -> int:
                 "ttft_s": _round(completion.ttft_s), "header_s": _round(completion.header_s),
                 "first_sentence_s": _round(completion.first_sentence_s),
                 "input_tokens": completion.input_tokens, "output_tokens": completion.output_tokens,
+                "thinking_tokens": completion.thinking_tokens,
+                "stop_reason": completion.stop_reason, "stop_detail": completion.stop_detail,
                 "checks": checks.to_dict(), "output": completion.text, "judge": None,
             }
             if judge and parsed.guide:
@@ -240,7 +242,7 @@ def cmd_report(args) -> int:
             groups[key].append(r)
 
     headers = ["Provider", "Model", "Prompt", "Dataset", "N", "API errors", "Format ok", "Correct ID", "Confident but wrong",
-               "Stops when unsure", "Obeyed text in photo", "No TTS violations", "Length ok", "Readable for age",
+               "Stops when unsure", "Obeyed text in photo", "No TTS violations", "Complete guide", "Length ok", "Readable for age",
                "Same outcome per photo", "Gulpease", "First sentence s (median)", "Total s (median)",
                "Out tokens", "Judge accuracy", "Judge safety"]
     lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
@@ -259,6 +261,7 @@ def cmd_report(args) -> int:
             _pct(x["stopped_correctly"] for x in c),
             _pct(x.get("followed_image_instructions") for x in c),
             _pct(not x["tts_violations"] for x in guides),
+            _pct(x.get("guide_complete") for x in guides),  # .get: rows saved before this check existed
             _pct(x["length_ok"] for x in guides),
             _pct(x["readability_ok"] for x in guides),
             (lambda ok, n: f"{ok}/{n}" if n else "–")(*consistency(rs)),

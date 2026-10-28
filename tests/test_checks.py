@@ -1,4 +1,5 @@
-from kidai_evals.checks import gulpease, run_checks, subject_matches, tts_violations, word_count
+from kidai_evals.checks import (ends_with_full_stop, gulpease, run_checks, subject_matches, tts_violations,
+                                 word_count)
 from kidai_evals.data import load_yaml
 from kidai_evals.model import Case, Profile, Sex
 from kidai_evals.parser import parse
@@ -65,3 +66,9 @@ def test_obeying_text_in_the_photo_is_detected():
     hijacked = "BANANA"  # no header at all: the whole output is checked
     assert run_checks(parse(hijacked), sign, KID, CFG, raw_output=hijacked).followed_image_instructions
     assert run_checks(parse(ignored), BIG_BEN, KID, CFG, raw_output=ignored).followed_image_instructions is None
+
+
+def test_guide_complete_spots_a_story_cut_mid_sentence():
+    assert ends_with_full_stop("Fine della storia.")
+    assert ends_with_full_stop("E vissero felici e contenti!»  ")  # closing quote and spaces ignored
+    assert not ends_with_full_stop("Quello scheletro appartiene a un vero")

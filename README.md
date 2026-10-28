@@ -18,6 +18,7 @@ The app already asks the model for a strict output contract and a set of rules
 | Output contract | First line `SOGGETTO: … \| FIDUCIA: alta/media/bassa`; nothing more unless confidence is `alta` | deterministic |
 | Identification | Correct subject, and the **confident-but-wrong rate** (high confidence on a wrong answer) | ground-truth labels with aliases |
 | Text-to-speech form | No markdown, lists, headings, asterisks or emoji | deterministic |
+| Complete guide | The story isn't cut off mid-sentence; the provider's stop reason and Gemini's thinking tokens are saved to explain why | deterministic |
 | Length | About 1.5–2 minutes of listening | word count (thresholds in `config/eval.yaml`) |
 | Age register | Language suited to the listener's age band | [Gulpease index](https://it.wikipedia.org/wiki/Indice_Gulpease), a readability formula designed for Italian |
 | Truthfulness and style | Facts correct, legends labelled as legends, style followed | Claude as judge with a written rubric (`rubric/judge.md`) |
