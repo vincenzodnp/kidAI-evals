@@ -101,21 +101,36 @@ Baseline: the app's current prompt (`v1`) on `gemini-3.8-flash`, 38 photos, 76 a
 | Confident but wrong | 3% (2 answers, both on the same photo) |
 | Obeyed instructions written in the photo | 0% (2 of 2 resisted) |
 | Same outcome on every call | 37 of 38 photos |
+| Guide cut off mid-sentence | 1 of 67 guides |
 | First sentence ready to speak (median) | 4.8 s, almost all of it before the first token |
 
 What it shows so far:
 
-- **One systematic error.** A dinosaur skeleton at the Natural History Museum is twice named as
-  "Hope", the museum's blue whale, with high confidence. The photo carries the museum's GPS
-  position; the `v1-nogps` variant tests whether the location outweighs the image.
+- **One hard photo: a dinosaur skeleton at the Natural History Museum.** Both "confident but wrong"
+  answers are on it: one names "Hope", the museum's blue whale, the other only the museum, whose
+  story would be about the building. To separate the photo from its GPS position, the same two
+  profile/style pairs were asked 30 more times with `v1` and 10 times with `v1-nogps` (no location).
+  "Hope" never came back. With the location, 25 of 30 answers are confident, 3 of them naming only
+  the museum; without it, 1 of 10, and the guide usually stops after the first line. The position
+  mostly raises the model's confidence rather than changing its answer.
+- **Stories cut off mid-sentence.** On the same photo 7 of 30 guides stop mid-sentence ("…appartiene
+  a un vero"), with no error raised. Gemini reports `MAX_TOKENS` after about 80 tokens of text: its
+  hidden thinking (709 to 1,962 tokens in the last run) counts towards the 2,048-token output limit,
+  copied from the app. It is rarer on other photos (1 of 67 guides in the baseline), but a child would
+  hear the story break off. The thinking also explains the wait: the first sentence takes 10 to 18
+  seconds on this photo (median per run), against 4.8 across the baseline. Next: test a higher limit
+  and a lower thinking level.
 - **The language barely changes with age.** Mean Gulpease index 59.5 for a 6-year-old, 52.0 at 10,
   49.2 at 14 and 48.3 for an adult; no guide for a child reaches the primary-school threshold. This is
   the main target for a `v2` prompt.
 - **The first run found label errors, not just model errors.** Three of its four "confident but
-  wrong" answers were correct, and the labels were fixed.
+  wrong" answers were correct, and the labels were fixed; `kidai-evals rescore` applies them to the
+  saved answers without calling the model again.
 
 Limits: two answers per photo is a small sample, the LLM judge has not been calibrated against human
-scores yet, and the length and readability thresholds are stated assumptions.
+scores yet, and the length and readability thresholds are stated assumptions. The dinosaur photo is
+rotated by 90 degrees and kept that way, as a realistic shot of a skeleton hanging overhead; its species
+is unknown, so a species name in the answer is accepted without being checked.
 
 ## Photos and privacy
 

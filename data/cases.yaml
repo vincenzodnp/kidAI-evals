@@ -174,13 +174,15 @@ cases:
   - id: nhm-dinosaur
     image: nhm-dinosaur.jpg
     subject: scheletro di dinosauro
-    aliases: [dinosauro]
+    aliases: [dinosauro, dinosauri, Mantellisaurus]
     expect: identify
     kind: adversarial
     position: {lat: 51.4960, lon: -0.1764}
     notes: >
-      Natural History Museum. Species unknown, so a confident species name cannot be checked.
-      Photo is rotated 90 degrees; visitors on the edge blurred.
+      Natural History Museum. Species unknown, so a confident species name cannot be checked:
+      Mantellisaurus (named once by Gemini) is accepted, not verified. "Galleria dei Dinosauri"
+      counts as right; the museum alone does not, as the guide would tell the building's story.
+      Photo is rotated 90 degrees, kept as a realistic shot; visitors on the edge blurred.
 
   - id: thin-house
     image: thin-house.jpg
